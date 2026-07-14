@@ -17,6 +17,9 @@ const (
 	TestEnv = "ui-e2e-tests"
 	DevEnv  = "dev"
 	ProdEnv = "prod"
+
+	// TrustArc cookie consent container (declarative shadow DOM, not an iframe).
+	trustArcConsentLocator = `div[name="trustarc_cm"]`
 )
 
 var (
@@ -45,6 +48,9 @@ func Setup(t *testing.T, testName string) playwright.Page {
 	baseURL := viper.GetString("BASE_URL")
 	username := viper.GetString("SSO_USERNAME")
 	password := viper.GetString("SSO_PASSWORD")
+	require.NotEmpty(t, baseURL, "BASE_URL must be set")
+	require.NotEmpty(t, username, "SSO_USERNAME must be set (check sandbox-test-kc / sandbox secrets mount)")
+	require.NotEmpty(t, password, "SSO_PASSWORD must be set (check sandbox-test-kc / sandbox secrets mount)")
 
 	pw, err := playwright.Run()
 	require.NoError(t, err)
@@ -75,18 +81,21 @@ func Setup(t *testing.T, testName string) playwright.Page {
 
 	handleRecordedVideo(t, page, filepath.Join(traceDirectory, fmt.Sprintf("%s.webm", testName)))
 
+	// Dismiss TrustArc whenever it appears during navigate/login. Prod videos show the
+	// banner arriving mid-Fill and SSO remounting, which clears the username field.
+	installCookieDismissHandler(t, page)
+
 	login := NewLoginPage(page, env)
 	login.Navigate(t, baseURL)
 
 	if env == ProdEnv {
-		// handle cookie consent
-		// on prod environment, the cookie consent appears after the login page is loaded
+		// Best-effort dismiss if already visible before login starts.
 		handleCookiesConsent(t, page)
 	}
 
 	login.Login(t, username, password)
 
-	// handle cookie consent
+	// handle cookie consent after landing on the dashboard
 	handleCookiesConsent(t, page)
 
 	return page
@@ -114,33 +123,24 @@ func launchBrowser(t *testing.T, pw *playwright.Playwright) playwright.Browser {
 }
 
 func handleCookiesConsent(t *testing.T, page playwright.Page) {
+	// Short wait: consent is optional and must not burn 30s on every run when absent.
+	const consentWaitMs = 10000.0
+
 	// TrustArc renders as a div with a declarative shadow DOM, not a real iframe.
-	consent := page.Locator("div[name=\"trustarc_cm\"]")
+	consent := page.Locator(trustArcConsentLocator)
 
 	err := consent.WaitFor(playwright.LocatorWaitForOptions{
-		State: playwright.WaitForSelectorStateVisible,
+		State:   playwright.WaitForSelectorStateVisible,
+		Timeout: playwright.Float(consentWaitMs),
 	})
 
 	if err != nil {
-		// no cookie consent appeared, skip
+		// Fallback: banner may not use trustarc_cm naming.
+		_ = clickCookieAcceptIfPresent(page)
 		return
 	}
 
-	// TrustArc can show different modals (e.g. full consent vs. simplified); accept whichever button is present.
-	agreeProceed := consent.GetByRole("button", playwright.LocatorGetByRoleOptions{
-		Name: "Agree and proceed with",
-	})
-
-	// to some us states, like texas, it appears the "Cookie Preferences and Opt-Out Rights" modal
-	acceptDefault := consent.GetByRole("button", playwright.LocatorGetByRoleOptions{
-		Name: "Accept default",
-	})
-	consentButton := agreeProceed.Or(acceptDefault)
-
-	IsVisible(t, consentButton)
-
-	err = consentButton.Click()
-	require.NoError(t, err)
+	require.True(t, clickCookieAcceptIfPresent(page), "TrustArc consent visible but no known accept button found")
 
 	// wait for the consent banner to disappear
 	err = consent.WaitFor(playwright.LocatorWaitForOptions{
@@ -151,6 +151,45 @@ func handleCookiesConsent(t *testing.T, page playwright.Page) {
 	// wait for page to stabilize
 	err = page.WaitForLoadState(playwright.PageWaitForLoadStateOptions{
 		State: playwright.LoadStateLoad,
+	})
+	require.NoError(t, err)
+}
+
+// knownCookieAcceptButtons covers TrustArc variants seen in prod CI videos.
+var knownCookieAcceptButtons = []string{
+	"Accept default",
+	"Accept all",
+	"Agree and proceed with",
+	"Required Cookies only",
+}
+
+// clickCookieAcceptIfPresent clicks the first visible known TrustArc accept button.
+func clickCookieAcceptIfPresent(page playwright.Page) bool {
+	consent := page.Locator(trustArcConsentLocator)
+	for _, name := range knownCookieAcceptButtons {
+		// Prefer buttons scoped to the TrustArc container (shadow DOM), then page-wide.
+		for _, btn := range []playwright.Locator{
+			consent.GetByRole("button", playwright.LocatorGetByRoleOptions{Name: name}),
+			page.GetByRole("button", playwright.PageGetByRoleOptions{Name: name}),
+		} {
+			if visible, _ := btn.IsVisible(); visible {
+				if err := btn.Click(playwright.LocatorClickOptions{Timeout: playwright.Float(5000)}); err == nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// installCookieDismissHandler auto-dismisses TrustArc overlays that appear mid-login.
+// Without this, Fill(username) can stick briefly then be cleared when SSO remounts
+// after the cookie modal (see ci-daily-prod failure videos).
+func installCookieDismissHandler(t *testing.T, page playwright.Page) {
+	t.Helper()
+	consent := page.Locator(trustArcConsentLocator)
+	err := page.AddLocatorHandler(consent, func(_ playwright.Locator) {
+		_ = clickCookieAcceptIfPresent(page)
 	})
 	require.NoError(t, err)
 }
