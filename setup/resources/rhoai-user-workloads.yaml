@@ -1,0 +1,114 @@
+kind: Template
+apiVersion: template.openshift.io/v1
+metadata:
+  name: rhoai-user-workloads
+objects:
+  - apiVersion: v1
+    kind: PersistentVolumeClaim
+    metadata:
+      name: jupyter-nb-storage
+      annotations:
+        openshift.io/display-name: jupyter-nb-storage
+    spec:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 20Gi
+  - apiVersion: kubeflow.org/v1
+    kind: Notebook
+    metadata:
+      name: jupyter-nb
+      annotations:
+        kubeflow-resource-stopped: "true"
+        notebooks.opendatahub.io/inject-auth: "true"
+        notebooks.opendatahub.io/last-image-selection: "s2i-minimal-notebook:3.4"
+        opendatahub.io/connections: ""
+        opendatahub.io/hardware-profile-name: default-profile
+        opendatahub.io/hardware-profile-namespace: redhat-ods-applications
+        opendatahub.io/image-display-name: "Jupyter | Minimal | CPU | Python 3.12"
+        opendatahub.io/workbench-image-namespace: ""
+        openshift.io/display-name: jupyter-nb
+      labels:
+        app: jupyter-nb
+        opendatahub.io/dashboard: "true"
+        opendatahub.io/odh-managed: "true"
+    spec:
+      template:
+        spec:
+          containers:
+            - name: jupyter-nb
+              image: image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/s2i-minimal-notebook:3.4
+              imagePullPolicy: Always
+              env:
+                - name: NOTEBOOK_ARGS
+                  value: |-
+                    --ServerApp.port=8888
+                                      --ServerApp.token=''
+                                      --ServerApp.password=''
+                                      --ServerApp.base_url=/notebook/${CURRENT_USER_NAMESPACE}/jupyter-nb
+                                      --ServerApp.quit_button=False
+                - name: JUPYTER_IMAGE
+                  value: image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/s2i-minimal-notebook:3.4
+                - name: REQUESTS_CA_BUNDLE
+                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
+                - name: SSL_CERT_FILE
+                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
+                - name: PIPELINES_SSL_SA_CERTS
+                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
+                - name: KF_PIPELINES_SSL_SA_CERTS
+                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
+                - name: GIT_SSL_CAINFO
+                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
+                - name: PIP_CERT
+                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
+              resources:
+                limits:
+                  cpu: "2"
+                  memory: 4Gi
+                requests:
+                  cpu: "2"
+                  memory: 4Gi
+              ports:
+                - containerPort: 8888
+                  name: notebook-port
+                  protocol: TCP
+              livenessProbe:
+                httpGet:
+                  path: /notebook/${CURRENT_USER_NAMESPACE}/jupyter-nb/api
+                  port: notebook-port
+                  scheme: HTTP
+                initialDelaySeconds: 10
+                periodSeconds: 5
+                failureThreshold: 3
+                timeoutSeconds: 1
+              readinessProbe:
+                httpGet:
+                  path: /notebook/${CURRENT_USER_NAMESPACE}/jupyter-nb/api
+                  port: notebook-port
+                  scheme: HTTP
+                initialDelaySeconds: 10
+                periodSeconds: 5
+                failureThreshold: 3
+                timeoutSeconds: 1
+              volumeMounts:
+                - name: jupyter-nb-storage
+                  mountPath: /opt/app-root/src/
+                - name: shm
+                  mountPath: /dev/shm
+                - name: trusted-ca
+                  mountPath: /etc/pki/tls/custom-certs
+                  readOnly: true
+              workingDir: /opt/app-root/src
+          enableServiceLinks: false
+          volumes:
+            - name: jupyter-nb-storage
+              persistentVolumeClaim:
+                claimName: jupyter-nb-storage
+            - name: shm
+              emptyDir:
+                medium: Memory
+            - name: trusted-ca
+              configMap:
+                name: workbench-trusted-ca-bundle
+                optional: true
