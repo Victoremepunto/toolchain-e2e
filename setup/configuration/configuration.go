@@ -182,6 +182,14 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // windows
 }
 
+// CandidateNames returns the possible resource names for a given username.
+// The sandbox operator may add a "crt-" prefix to certain usernames via
+// compliantUsername, so downstream resources (Space, Idler, namespace)
+// may be named differently from the original UserSignup.
+func CandidateNames(name string) []string {
+	return []string{name, "crt-" + name}
+}
+
 func ResultsDir() string {
 	return resultsDir
 }

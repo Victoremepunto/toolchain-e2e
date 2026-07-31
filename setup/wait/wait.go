@@ -18,6 +18,11 @@ import (
 )
 
 func ForSpace(cl client.Client, space string) error {
+	_, err := ForSpaceWithName(cl, space)
+	return err
+}
+
+func ForSpaceWithName(cl client.Client, space string) (string, error) {
 	sp := &toolchainv1alpha1.Space{}
 	expectedConditions := []toolchainv1alpha1.Condition{
 		{
@@ -26,24 +31,30 @@ func ForSpace(cl client.Client, space string) error {
 			Reason: "Provisioned",
 		},
 	}
+	var resolvedName string
 
 	if err := k8swait.PollUntilContextTimeout(context.TODO(), configuration.DefaultRetryInterval, configuration.DefaultTimeout, true, func(ctx context.Context) (bool, error) {
-		err := cl.Get(context.TODO(), types.NamespacedName{
-			Name:      space,
-			Namespace: configuration.HostOperatorNamespace,
-		}, sp)
-		if k8serrors.IsNotFound(err) {
-			return false, nil
-		} else if err != nil {
-			return false, err
-		} else if !test.ConditionsMatch(sp.Status.Conditions, expectedConditions...) {
-			return false, nil
+		for _, name := range configuration.CandidateNames(space) {
+			err := cl.Get(context.TODO(), types.NamespacedName{
+				Name:      name,
+				Namespace: configuration.HostOperatorNamespace,
+			}, sp)
+			if k8serrors.IsNotFound(err) {
+				continue
+			} else if err != nil {
+				return false, err
+			} else if !test.ConditionsMatch(sp.Status.Conditions, expectedConditions...) {
+				resolvedName = name
+				return false, nil
+			}
+			resolvedName = name
+			return true, nil
 		}
-		return true, nil
+		return false, nil
 	}); err != nil {
-		return fmt.Errorf("space '%s' is not ready yet: %w", space, err)
+		return "", fmt.Errorf("space '%s' is not ready yet: %w", space, err)
 	}
-	return nil
+	return resolvedName, nil
 }
 
 func HasSubscriptionWithCriteria(cl client.Client, name, namespace string, criteria ...subCriteria) (bool, error) {

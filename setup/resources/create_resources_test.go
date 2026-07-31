@@ -61,6 +61,42 @@ func TestCreateUserResourcesFromTemplateFiles(t *testing.T) {
 			&corev1.Service{}))
 	})
 
+	t.Run("compliant username differs from usersignup name", func(t *testing.T) {
+		// given
+		// Reproduces issue #1308: when the sandbox operator transforms
+		// the username (e.g. "default-0005" -> "crt-default-0005"),
+		// the Space and namespace are named after the compliantUsername.
+		// The tool should resolve the compliant username and use it
+		// for Space lookup and namespace derivation.
+		t.Cleanup(func() {
+			tmpls = make(map[string]*templatev1.Template)
+		})
+		configuration.DefaultTimeout = time.Millisecond * 100
+
+		// Space exists under compliant name, not original username
+		space := testspace.NewSpace(configuration.HostOperatorNamespace, "crt-default-0005", testspace.WithCondition(
+			toolchainv1alpha1.Condition{
+				Type:   toolchainv1alpha1.ConditionReady,
+				Status: corev1.ConditionTrue,
+				Reason: "Provisioned",
+			}))
+		cl := commontest.NewFakeClient(t, space)
+		username := "default-0005"
+		templatePath := "user-workloads.yaml"
+
+		// when
+		err := CreateUserResourcesFromTemplateFiles(context.TODO(), cl, s, username, []string{templatePath})
+
+		// then - should succeed: resources deployed into crt-default-0005-dev
+		require.NoError(t, err)
+		assert.NoError(t, cl.Get(context.TODO(),
+			types.NamespacedName{
+				Namespace: "crt-default-0005-dev",
+				Name:      "nginx-deployment",
+			},
+			&appsv1.Deployment{}))
+	})
+
 	t.Run("failures", func(t *testing.T) {
 		t.Run("invalid template", func(t *testing.T) {
 			t.Run("file not found", func(t *testing.T) {

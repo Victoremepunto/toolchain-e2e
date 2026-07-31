@@ -34,16 +34,18 @@ func UpdateTimeout(cl client.Client, username string, timeout time.Duration) err
 func getIdler(cl client.Client, name string) (*toolchainv1alpha1.Idler, error) {
 	idler := &toolchainv1alpha1.Idler{}
 	err := k8swait.PollUntilContextTimeout(context.TODO(), cfg.DefaultRetryInterval, cfg.DefaultTimeout, true, func(ctx context.Context) (bool, error) {
-		err := cl.Get(context.TODO(), types.NamespacedName{
-			Name: name,
-		}, idler)
-		if errors.IsNotFound(err) {
-			return false, nil
-		} else if err != nil {
-			return false, err
+		for _, candidate := range cfg.CandidateNames(name) {
+			err := cl.Get(context.TODO(), types.NamespacedName{
+				Name: candidate,
+			}, idler)
+			if errors.IsNotFound(err) {
+				continue
+			} else if err != nil {
+				return false, err
+			}
+			return test.ContainsCondition(idler.Status.Conditions, wait.Running()), nil
 		}
-		// check the status conditions, wait until the idler is "Ready/True"
-		return test.ContainsCondition(idler.Status.Conditions, wait.Running()), nil
+		return false, nil
 	})
 	return idler, err
 }

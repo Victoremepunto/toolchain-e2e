@@ -40,6 +40,29 @@ func TestForSpace(t *testing.T) {
 		require.NoError(t, err)
 	})
 
+	t.Run("compliant username differs from usersignup name", func(t *testing.T) {
+		// given
+		// Reproduces issue #1308: when the sandbox operator transforms
+		// the username (e.g. "default-0005" -> "crt-default-0005"),
+		// the Space is named after the compliantUsername, not the
+		// original UserSignup name.
+		configuration.DefaultTimeout = time.Millisecond * 100
+		space := testspace.NewSpace(configuration.HostOperatorNamespace, "crt-default-0005", testspace.WithCondition(
+			toolchainv1alpha1.Condition{
+				Type:   toolchainv1alpha1.ConditionReady,
+				Status: corev1.ConditionTrue,
+				Reason: "Provisioned",
+			}))
+		cl := test.NewFakeClient(t, space)
+
+		// when - looking up by the original username (not the compliant one)
+		err := wait.ForSpace(cl, "default-0005")
+
+		// then - ForSpace should find the space even when the name
+		// was transformed by the sandbox operator
+		require.NoError(t, err)
+	})
+
 	t.Run("failures", func(t *testing.T) {
 		t.Run("timeout", func(t *testing.T) {
 			// given

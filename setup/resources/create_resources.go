@@ -18,22 +18,24 @@ const userNSParam = "CURRENT_USER_NAMESPACE"
 var tmpls map[string]*templatev1.Template = make(map[string]*templatev1.Template)
 
 func CreateUserResourcesFromTemplateFiles(ctx context.Context, cl runtimeclient.Client, s *runtime.Scheme, username string, templatePaths []string) error {
-	userNS := fmt.Sprintf("%s-dev", username)
-	combinedObjsToProcess := []runtimeclient.Object{}
+	// load and validate all templates first so errors surface before the space wait
 	for _, templatePath := range templatePaths {
-		// get the template from the file if it hasn't been processed already
 		if _, ok := tmpls[templatePath]; !ok {
 			var err error
 			if tmpls[templatePath], err = templates.GetTemplateFromFile(templatePath); err != nil {
 				return fmt.Errorf("invalid template file: '%s': %w", templatePath, err)
 			}
 		}
-		tmpl := tmpls[templatePath]
+	}
 
-		// waiting for each space here prevents some edge cases where the setup job can progress beyond the usersignup job and fail with a timeout
-		if err := wait.ForSpace(cl, username); err != nil {
-			return err
-		}
+	resolvedName, err := wait.ForSpaceWithName(cl, username)
+	if err != nil {
+		return err
+	}
+	userNS := fmt.Sprintf("%s-dev", resolvedName)
+	combinedObjsToProcess := []runtimeclient.Object{}
+	for _, templatePath := range templatePaths {
+		tmpl := tmpls[templatePath]
 		processor := ctemplate.NewProcessor(s)
 		objsToProcess, err := processor.Process(tmpl.DeepCopy(), map[string]string{
 			userNSParam: userNS,
