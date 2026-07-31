@@ -6,6 +6,9 @@ set -euo pipefail
 
 export KUBECONFIG=setup/infra/clusters/vmugicag-perf/auth/kubeconfig
 
+KUBEADMIN_PASSWORD="$(cat setup/infra/clusters/vmugicag-perf/auth/kubeadmin-password)"
+oc login -u kubeadmin -p "${KUBEADMIN_PASSWORD}" --insecure-skip-tls-verify=true
+
 WORKLOADS="openshift-operators:servicemesh-operator3"
 WORKLOADS+=",cert-manager-operator:cert-manager-operator-controller-manager"
 WORKLOADS+=",cert-manager:cert-manager"
