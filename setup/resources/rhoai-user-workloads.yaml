@@ -1,114 +1,68 @@
+# v1 RHOAI custom user-workloads template for toolchain-e2e/setup
+#
+# Applied via --template to --custom N users (see COMMANDS.md).
+# Modeled on setup/resources/user-workloads.yaml (OpenShift Template YAML),
+# not on setup/templates/template.go (loader only).
+#
+# Design notes (v1 / learning run):
+# - Creates a Notebook CR per custom user so the workbenches controller has
+#   objects to watch/reconcile (the main goal of this follow-up).
+# - Leaves notebooks STOPPED via kubeflow-resource-stopped so 250 users do
+#   not schedule 250 Jupyter pods (same idea as replicas: 0 in the default
+#   nginx Deployment). Remove that annotation later if you want running pods.
+# - Omits namespace: the setup tool applies objects into each user's -stage ns.
+# - Image tag may differ by RHOAI version; verify before a large run:
+#     oc get imagestream -n redhat-ods-applications
+#
 kind: Template
 apiVersion: template.openshift.io/v1
 metadata:
   name: rhoai-user-workloads
 objects:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
-      name: jupyter-nb-storage
-      annotations:
-        openshift.io/display-name: jupyter-nb-storage
-    spec:
-      accessModes:
-        - ReadWriteOnce
-      resources:
-        requests:
-          storage: 20Gi
   - apiVersion: kubeflow.org/v1
     kind: Notebook
     metadata:
-      name: jupyter-nb
-      annotations:
-        kubeflow-resource-stopped: "true"
-        notebooks.opendatahub.io/inject-auth: "true"
-        notebooks.opendatahub.io/last-image-selection: "s2i-minimal-notebook:3.4"
-        opendatahub.io/connections: ""
-        opendatahub.io/hardware-profile-name: default-profile
-        opendatahub.io/hardware-profile-namespace: redhat-ods-applications
-        opendatahub.io/image-display-name: "Jupyter | Minimal | CPU | Python 3.12"
-        opendatahub.io/workbench-image-namespace: ""
-        openshift.io/display-name: jupyter-nb
+      name: perf-workbench
       labels:
-        app: jupyter-nb
+        app: perf-workbench
         opendatahub.io/dashboard: "true"
-        opendatahub.io/odh-managed: "true"
+        toolchain.dev.openshift.com/perf-test: "rhoai-custom-v1"
+      annotations:
+        notebooks.opendatahub.io/inject-oauth: "true"
+        openshift.io/display-name: "Perf Test Workbench"
+        openshift.io/description: "v1 custom template Notebook for Sandbox performance testing"
+        opendatahub.io/image-display-name: "Minimal Python"
+        opendatahub.io/accelerator-name: ""
+        notebooks.opendatahub.io/last-image-selection: "s2i-minimal-notebook:2024.2"
+        notebooks.opendatahub.io/last-size-selection: Small
+        # Keep stopped so custom users create CR load without pod/image load.
+        # Presence of the key stops the workbench; value is opaque.
+        kubeflow-resource-stopped: "perf-test-stopped"
     spec:
       template:
         spec:
           containers:
-            - name: jupyter-nb
-              image: image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/s2i-minimal-notebook:3.4
-              imagePullPolicy: Always
-              env:
-                - name: NOTEBOOK_ARGS
-                  value: |-
-                    --ServerApp.port=8888
-                                      --ServerApp.token=''
-                                      --ServerApp.password=''
-                                      --ServerApp.base_url=/notebook/${CURRENT_USER_NAMESPACE}/jupyter-nb
-                                      --ServerApp.quit_button=False
-                - name: JUPYTER_IMAGE
-                  value: image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/s2i-minimal-notebook:3.4
-                - name: REQUESTS_CA_BUNDLE
-                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
-                - name: SSL_CERT_FILE
-                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
-                - name: PIPELINES_SSL_SA_CERTS
-                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
-                - name: KF_PIPELINES_SSL_SA_CERTS
-                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
-                - name: GIT_SSL_CAINFO
-                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
-                - name: PIP_CERT
-                  value: /etc/pki/tls/custom-certs/ca-bundle.crt
-              resources:
-                limits:
-                  cpu: "2"
-                  memory: 4Gi
-                requests:
-                  cpu: "2"
-                  memory: 4Gi
+            - name: perf-workbench
+              image: image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/s2i-minimal-notebook:2024.2
+              imagePullPolicy: IfNotPresent
+              workingDir: /opt/app-root/src
               ports:
                 - containerPort: 8888
                   name: notebook-port
                   protocol: TCP
-              livenessProbe:
-                httpGet:
-                  path: /notebook/${CURRENT_USER_NAMESPACE}/jupyter-nb/api
-                  port: notebook-port
-                  scheme: HTTP
-                initialDelaySeconds: 10
-                periodSeconds: 5
-                failureThreshold: 3
-                timeoutSeconds: 1
-              readinessProbe:
-                httpGet:
-                  path: /notebook/${CURRENT_USER_NAMESPACE}/jupyter-nb/api
-                  port: notebook-port
-                  scheme: HTTP
-                initialDelaySeconds: 10
-                periodSeconds: 5
-                failureThreshold: 3
-                timeoutSeconds: 1
-              volumeMounts:
-                - name: jupyter-nb-storage
-                  mountPath: /opt/app-root/src/
-                - name: shm
-                  mountPath: /dev/shm
-                - name: trusted-ca
-                  mountPath: /etc/pki/tls/custom-certs
-                  readOnly: true
-              workingDir: /opt/app-root/src
-          enableServiceLinks: false
-          volumes:
-            - name: jupyter-nb-storage
-              persistentVolumeClaim:
-                claimName: jupyter-nb-storage
-            - name: shm
-              emptyDir:
-                medium: Memory
-            - name: trusted-ca
-              configMap:
-                name: workbench-trusted-ca-bundle
-                optional: true
+              env:
+                - name: NOTEBOOK_ARGS
+                  value: |-
+                    --ServerApp.port=8888
+                    --ServerApp.token=''
+                    --ServerApp.password=''
+                    --ServerApp.quit_button=False
+                - name: JUPYTER_IMAGE
+                  value: image-registry.openshift-image-registry.svc:5000/redhat-ods-applications/s2i-minimal-notebook:2024.2
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: 256Mi
+                limits:
+                  cpu: "500m"
+                  memory: 1Gi

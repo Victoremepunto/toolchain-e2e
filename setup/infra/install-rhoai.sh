@@ -213,9 +213,15 @@ else
 fi
 
 # --- Step 7: DSCI (DSCInitialization) ---
-echo "Applying DSCInitialization..."
-oc apply -f "${MANIFESTS}/dsci.yaml"
-echo "✓ DSCI applied."
+# The RHOAI operator auto-creates a default DSCI; applying a second one is
+# rejected by the admission webhook.  Skip if one already exists and is Ready.
+if oc get dsci default-dsci -o jsonpath='{.status.phase}' 2>/dev/null | grep -q "Ready"; then
+  echo "✓ DSCInitialization already exists and is Ready — skipping."
+else
+  echo "Applying DSCInitialization..."
+  oc apply -f "${MANIFESTS}/dsci.yaml"
+  echo "✓ DSCI applied."
+fi
 
 # --- Step 8: DSC (DataScienceCluster) ---
 echo "Applying DataScienceCluster..."

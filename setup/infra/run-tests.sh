@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Perf test stages: baseline then 2000-user load test.
+# Staged perf tests: additive users, no cleanup between stages.
 # SM3 and RHOAI must be installed before running this script.
 
 export KUBECONFIG=setup/infra/clusters/vmugicag-perf/auth/kubeconfig
@@ -29,28 +29,67 @@ WORKLOADS+=",redhat-ods-applications:odh-model-controller"
 WORKLOADS+=",redhat-ods-applications:odh-notebook-controller-manager"
 WORKLOADS+=",redhat-ods-applications:rhods-dashboard"
 
+RESULTS_DIR="tmp/results"
+mkdir -p "${RESULTS_DIR}"
+
 run_test() {
   local desc="$1"; shift
+  local stamp
+  stamp="$(date +%Y-%m-%d_%H:%M:%S)"
+  local testname=""
+  for arg in "$@"; do
+    if [[ "${prev:-}" == "--testname" || "${arg}" == --testname=* ]]; then
+      testname="${arg#--testname=}"
+      break
+    fi
+    prev="${arg}"
+  done
+  local logfile="${RESULTS_DIR}/${stamp}-${testname:-unknown}.log"
+
   echo "--- ${desc} ---"
-  timeout --signal=KILL 3600 go run setup/main.go "$@" || {
-    echo "WARNING: test '${desc}' exited non-zero or was killed by timeout"
-  }
+  echo "Logging to: ${logfile}"
+  timeout --signal=KILL 3600 go run setup/main.go "$@" 2>&1 | tee "${logfile}"
+  local rc=${PIPESTATUS[0]}
+  if [[ ${rc} -ne 0 ]]; then
+    echo "WARNING: test '${desc}' exited ${rc} or was killed by timeout"
+  fi
+  return ${rc}
 }
 
-echo "===== Stage 1: Baseline (1 user, with SM3 + RHOAI installed) ====="
+echo "===== Stage 1: Baseline — 1 default user ====="
 
 run_test "Stage 1: 1-user baseline" --users 1 --default 1 --custom 0 \
-  --username baseline --testname=baseline \
+  --username baseline --testname=stage1-baseline \
   --workloads "${WORKLOADS}" --interactive=false
 
-echo "===== Stage 2: 2000-user load test ====="
+echo "===== Stage 2: 2000 default users ====="
 
-run_test "Stage 2: 2000-user" --users 2000 --default 1750 --custom 250 \
+run_test "Stage 2: 2000 default users" --users 2000 --default 2000 --custom 0 \
+  --username rhoai34 --testname=stage2-2k-default \
+  --workloads "${WORKLOADS}" --interactive=false
+
+echo "===== Stage 3: +10 RHOAI custom users ====="
+
+run_test "Stage 3: 10 RHOAI custom users" --users 10 --default 0 --custom 10 \
   --template setup/resources/rhoai-user-workloads.yaml \
-  --username rhoai34 --testname=rhoai34 \
+  --username rhoai-c1 --testname=stage3-custom-10 \
+  --workloads "${WORKLOADS}" --interactive=false
+
+echo "===== Stage 4: +50 RHOAI custom users (cumulative 60) ====="
+
+run_test "Stage 4: 50 RHOAI custom users" --users 50 --default 0 --custom 50 \
+  --template setup/resources/rhoai-user-workloads.yaml \
+  --username rhoai-c2 --testname=stage4-custom-50 \
+  --workloads "${WORKLOADS}" --interactive=false
+
+echo "===== Stage 5: +200 RHOAI custom users (cumulative 260) ====="
+
+run_test "Stage 5: 200 RHOAI custom users" --users 200 --default 0 --custom 200 \
+  --template setup/resources/rhoai-user-workloads.yaml \
+  --username rhoai-c3 --testname=stage5-custom-200 \
   --workloads "${WORKLOADS}" --interactive=false
 
 echo ""
-echo "===== ALL STAGES COMPLETE ====="
+echo "===== ALL 5 STAGES COMPLETE ====="
 echo "Results in tmp/results/"
-ls -lt tmp/results/*.csv | head -6
+ls -lt tmp/results/*.csv | head -10
