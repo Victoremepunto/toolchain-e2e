@@ -212,6 +212,43 @@ else
   wait_for_csv "redhat-ods-operator" "rhods-operator" "RHOAI operator" 60
 fi
 
+# --- Step 6b: Override operator image if RHODS_OPERATOR_IMAGE is set ---
+if [[ -n "${RHODS_OPERATOR_IMAGE:-}" ]]; then
+  echo "Overriding RHOAI operator image: ${RHODS_OPERATOR_IMAGE}"
+
+  # Delete the Subscription so OLM won't reconcile back to the catalog image.
+  oc delete subscription rhods-operator -n redhat-ods-operator --ignore-not-found
+  echo "  Deleted Subscription (prevents OLM from reverting the image)."
+
+  # Patch the CSV — OLM uses this as the source of truth for the Deployment.
+  CSV_NAME=$(oc get csv -n redhat-ods-operator -o name | grep rhods-operator)
+  oc patch "${CSV_NAME}" -n redhat-ods-operator --type=json -p \
+    "[{\"op\": \"replace\", \"path\": \"/spec/install/spec/deployments/0/spec/template/spec/containers/0/image\", \"value\": \"${RHODS_OPERATOR_IMAGE}\"}]"
+  echo "  Patched CSV image."
+
+  # Wait until the running pod has the correct image.
+  echo "  Waiting for operator pod to run with the new image..."
+  for i in $(seq 1 30); do
+    POD_IMAGE=$(oc get pods -n redhat-ods-operator -l name=rhods-operator \
+      -o jsonpath='{.items[0].spec.containers[0].image}' 2>/dev/null || echo "")
+    if [[ "${POD_IMAGE}" == "${RHODS_OPERATOR_IMAGE}" ]]; then
+      POD_READY=$(oc get pods -n redhat-ods-operator -l name=rhods-operator \
+        -o jsonpath='{.items[0].status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
+      if [[ "${POD_READY}" == "True" ]]; then
+        echo "✓ Operator running with custom image: ${POD_IMAGE}"
+        break
+      fi
+    fi
+    if [[ $i -eq 30 ]]; then
+      echo "ERROR: Operator pod did not start with image ${RHODS_OPERATOR_IMAGE} after 5 minutes."
+      echo "  Current pod image: ${POD_IMAGE}"
+      oc get pods -n redhat-ods-operator -o wide
+      exit 1
+    fi
+    sleep 10
+  done
+fi
+
 # --- Step 7: DSCI (DSCInitialization) ---
 # The RHOAI operator auto-creates a default DSCI; applying a second one is
 # rejected by the admission webhook.  Skip if one already exists and is Ready.

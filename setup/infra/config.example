@@ -31,3 +31,9 @@ SSH_KEY_FILE="$HOME/.ssh/id_ed25519.pub"
 
 # OCP version (major.minor) — create-cluster.sh resolves the latest z-stream
 OCP_VERSION="4.21"
+
+# Optional: override the RHOAI operator image after OLM install.
+# When set, install-rhoai.sh patches the CSV to use this image instead of the
+# catalog default. Useful for testing operator fixes before they land in a release.
+# Example: RHODS_OPERATOR_IMAGE="quay.io/ugiordan/rhods-operator:rhoaieng-83243-test1"
+#RHODS_OPERATOR_IMAGE=""
