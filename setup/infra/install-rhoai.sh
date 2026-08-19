@@ -247,6 +247,12 @@ if [[ -n "${RHODS_OPERATOR_IMAGE:-}" ]]; then
     fi
     sleep 10
   done
+
+  # Wait for kube-apiserver watch caches to expire and GC to reclaim memory.
+  COOLDOWN_MINUTES="${OPERATOR_PATCH_COOLDOWN_MINUTES:-15}"
+  echo "Waiting ${COOLDOWN_MINUTES} minutes for apiserver watch cache to expire..."
+  sleep "$((COOLDOWN_MINUTES * 60))"
+  echo "✓ Cooldown complete."
 fi
 
 # --- Step 7: DSCI (DSCInitialization) ---
