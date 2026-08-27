@@ -7,9 +7,9 @@ spec:
     dashboard:
       managementState: Managed
     aipipelines:
-      managementState: Removed
-    kserve:
       managementState: Managed
+    kserve:
+      managementState: Managed  # Required by MaaS
       defaultDeploymentMode: RawDeployment
       rawDeploymentServiceConfig: Headed
       nim:
@@ -21,26 +21,26 @@ spec:
         managementState: Removed
         name: do-not-use
     kueue:
-      managementState: Removed
+      managementState: Removed  # Users are not running distributed training jobs
     modelregistry:
       managementState: Removed
     ray:
-      managementState: Removed
+      managementState: Removed  # Since RHOAI 3.4, Ray has been removed from vLLM multi-node ServingRuntime + inference
     trainingoperator:
-      managementState: Removed
+      managementState: Managed
     trainer:
-      managementState: Removed
+      managementState: Removed  # Presently, there is no dedicated GPU for individual users, so trainer's TrainJob can't be used.
     trustyai:
       managementState: Removed
     workbenches:
       managementState: Managed
     feastoperator:
-      managementState: Removed
+      managementState: Removed  # Feature Store is not required for GenAI or Chatting w/ MaaS models
     llamastackoperator:
-      managementState: Managed
+      managementState: Removed  # Deprecated in favor of OGX
     ogx:
-      managementState: Managed
+      managementState: Managed  # Required for RAG demos
     mlflowoperator:
       managementState: Managed
     sparkoperator:
-      managementState: Removed
+      managementState: Removed  # Spark operator is Dev Preview + not required for Sandbox
