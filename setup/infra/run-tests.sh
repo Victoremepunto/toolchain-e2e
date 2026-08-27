@@ -28,6 +28,7 @@ fi
 KUBEADMIN_PASSWORD="$(cat "${SCRIPT_DIR}/clusters/${CLUSTER_NAME}/auth/kubeadmin-password")"
 oc login -u kubeadmin -p "${KUBEADMIN_PASSWORD}" --insecure-skip-tls-verify=true
 
+# RHOAI dependency operators
 WORKLOADS="cert-manager-operator:cert-manager-operator-controller-manager"
 WORKLOADS+=",cert-manager:cert-manager"
 WORKLOADS+=",cert-manager:cert-manager-cainjector"
@@ -35,10 +36,12 @@ WORKLOADS+=",cert-manager:cert-manager-webhook"
 WORKLOADS+=",openshift-jobset-system:jobset-operator"
 WORKLOADS+=",openshift-nfd:nfd-controller-manager"
 WORKLOADS+=",nvidia-gpu-operator:gpu-operator"
+# RHOAI operator and components (must match DSC — verify with:
+#   oc get deployments -n redhat-ods-operator -o name
+#   oc get deployments -n redhat-ods-applications -o name)
 WORKLOADS+=",redhat-ods-operator:rhods-operator"
 WORKLOADS+=",redhat-ods-applications:dashboard-redirect"
 WORKLOADS+=",redhat-ods-applications:kserve-controller-manager"
-WORKLOADS+=",redhat-ods-applications:llama-stack-k8s-operator-controller-manager"
 WORKLOADS+=",redhat-ods-applications:llmisvc-controller-manager"
 WORKLOADS+=",redhat-ods-applications:mlflow-operator-controller-manager"
 WORKLOADS+=",redhat-ods-applications:model-serving-api"
@@ -83,7 +86,7 @@ run_test "Stage 1: 1-user baseline" --users 1 --default 1 --custom 0 \
 echo "===== Stage 2: 2000 default users ====="
 
 run_test "Stage 2: 2000 default users" --users 2000 --default 2000 --custom 0 \
-  --username rhoai34 --testname=stage2-2k-default \
+  --username rhoai35 --testname=stage2-2k-default \
   --workloads "${WORKLOADS}" --interactive=false
 
 echo "===== Stage 3: +10 RHOAI custom users ====="

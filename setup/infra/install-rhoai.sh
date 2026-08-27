@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Installs RHOAI 3.4 and its prerequisites on the perf-test cluster.
+# Installs RHOAI 3.5 and its prerequisites on the perf-test cluster.
 # Service Mesh 3 is NOT required on OCP 4.21+.
 #
 set -euo pipefail
@@ -199,7 +199,7 @@ fi
 if oc get csv -n redhat-ods-operator 2>/dev/null | grep -q "rhods-operator.*Succeeded"; then
   echo "✓ RHOAI operator is already installed."
 else
-  echo "Installing RHOAI 3.4 operator..."
+  echo "Installing RHOAI operator..."
   oc apply -f "${MANIFESTS}/rhoai-operator.yaml"
   wait_for_csv "redhat-ods-operator" "rhods-operator" "RHOAI operator" 60
 fi
@@ -250,12 +250,15 @@ fi
 # --- Step 7: DSCI (DSCInitialization) ---
 # The RHOAI operator auto-creates a default DSCI; applying a second one is
 # rejected by the admission webhook.  If one exists, patch it to match our
-# desired config (e.g. trustedCABundle: Removed).
+# desired config from dsci.yaml.
+TRUSTED_CA_STATE=$(python3 -c "import yaml; print(yaml.safe_load(open('${MANIFESTS}/dsci.yaml'))['spec']['trustedCABundle']['managementState'])")
+echo "trustedCABundle managementState from manifest: ${TRUSTED_CA_STATE}"
+
 if oc get dsci default-dsci -o jsonpath='{.status.phase}' 2>/dev/null | grep -q "Ready"; then
   echo "DSCInitialization already exists — patching to match desired config..."
   oc patch dsci default-dsci --type=merge \
-    -p '{"spec":{"trustedCABundle":{"managementState":"Removed","customCABundle":""}}}'
-  echo "✓ DSCI patched."
+    -p "{\"spec\":{\"trustedCABundle\":{\"managementState\":\"${TRUSTED_CA_STATE}\",\"customCABundle\":\"\"}}}"
+  echo "✓ DSCI patched (trustedCABundle: ${TRUSTED_CA_STATE})."
 else
   echo "Applying DSCInitialization..."
   oc apply -f "${MANIFESTS}/dsci.yaml"
@@ -288,7 +291,7 @@ for i in $(seq 1 60); do
 done
 
 echo ""
-echo "=== RHOAI 3.4 Installation Complete ==="
+echo "=== RHOAI Installation Complete ==="
 echo ""
 echo "Installed operators:"
 oc get csv -A -o custom-columns='NAME:.metadata.name,PHASE:.status.phase' --no-headers | grep -E 'rhods|jobset|cert-manager|nfd|gpu-operator' | sort -u

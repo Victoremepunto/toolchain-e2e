@@ -31,7 +31,7 @@ servicemesh-install:
 	$(INFRA_DIR)/install-servicemesh.sh
 
 .PHONY: rhoai-install
-## Install RHOAI 3.4 on the perf-test cluster
+## Install RHOAI on the perf-test cluster
 rhoai-install:
 	$(INFRA_DIR)/install-rhoai.sh
 
