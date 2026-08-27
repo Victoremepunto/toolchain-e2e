@@ -9,4 +9,4 @@ spec:
     namespace: redhat-ods-monitoring
   trustedCABundle:
     customCABundle: ''
-    managementState: Managed
+    managementState: Removed
