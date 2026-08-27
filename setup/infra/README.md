@@ -47,12 +47,11 @@ Must run on a **fresh cluster** — reusing clusters inflates memory metrics
 (etcd, apiserver caches don't fully drain between user provisioning cycles).
 
 1. Provision fresh OCP cluster (`make cluster-create`)
-2. Install Service Mesh 3 (`make servicemesh-install`)
-3. Install RHOAI 3.4 (`make rhoai-install`) — provisions GPU node, installs NFD, NVIDIA GPU, cert-manager, JobSet, and RHOAI operators, then applies DSCI and DSC
-4. Install Sandbox operators (`make dev-deploy-latest`)
-5. Run 2000-user test
+2. Install RHOAI (`make rhoai-install`) — provisions GPU node, installs NFD, NVIDIA GPU, cert-manager, JobSet, and RHOAI operators, then applies DSCI and DSC
+3. Install Sandbox operators (`make dev-deploy-latest`)
+4. Run staged performance tests (`make perf-test`)
 
-RHOAI operator metrics are captured via `--workloads`.
+RHOAI operator metrics are captured via `--workloads` (see `run-tests.sh`).
 
 **macOS note:** The 2000-user test opens many concurrent connections. If you
 hit TCP port exhaustion errors, raise the ephemeral port range:
@@ -67,38 +66,15 @@ sudo sysctl -w net.inet.ip.portrange.first=32768
 # Set KUBECONFIG first (use your CLUSTER_NAME from setup/infra/config):
 export KUBECONFIG=setup/infra/clusters/<your-cluster-name>/auth/kubeconfig
 
-# Install SM3 and RHOAI before Sandbox operators so their workloads
+# Install RHOAI before Sandbox operators so their workloads
 # are present during both baseline and 2000-user measurements.
-make servicemesh-install
 make rhoai-install
 
 # Install Sandbox operators
 make dev-deploy-latest
 
-WORKLOADS="openshift-operators:servicemesh-operator3"
-WORKLOADS+=",cert-manager-operator:cert-manager-operator-controller-manager"
-WORKLOADS+=",cert-manager:cert-manager"
-WORKLOADS+=",cert-manager:cert-manager-cainjector"
-WORKLOADS+=",cert-manager:cert-manager-webhook"
-WORKLOADS+=",openshift-jobset-system:jobset-operator"
-WORKLOADS+=",openshift-nfd:nfd-controller-manager"
-WORKLOADS+=",nvidia-gpu-operator:gpu-operator"
-WORKLOADS+=",redhat-ods-operator:rhods-operator"
-WORKLOADS+=",redhat-ods-applications:dashboard-redirect"
-WORKLOADS+=",redhat-ods-applications:kserve-controller-manager"
-WORKLOADS+=",redhat-ods-applications:llama-stack-k8s-operator-controller-manager"
-WORKLOADS+=",redhat-ods-applications:llmisvc-controller-manager"
-WORKLOADS+=",redhat-ods-applications:mlflow-operator-controller-manager"
-WORKLOADS+=",redhat-ods-applications:model-serving-api"
-WORKLOADS+=",redhat-ods-applications:notebook-controller-deployment"
-WORKLOADS+=",redhat-ods-applications:odh-model-controller"
-WORKLOADS+=",redhat-ods-applications:odh-notebook-controller-manager"
-WORKLOADS+=",redhat-ods-applications:rhods-dashboard"
-
-# 2000-user test
-go run setup/main.go --users 2000 --default 2000 --custom 0 \
-  --username rhoai34 --testname=rhoai34 \
-  --workloads "${WORKLOADS}" --interactive=false
+# Run the 5-stage performance test
+make perf-test
 ```
 
 Results CSVs are written to `tmp/results/`.
@@ -121,8 +97,9 @@ needs `metadata.json` to clean up AWS resources.
 | `make iam-cleanup` | Delete IAM user and credentials |
 | `make cluster-create` | Provision the OCP cluster |
 | `make cluster-destroy` | Tear down the OCP cluster |
-| `make servicemesh-install` | Install Service Mesh 3 operator |
-| `make rhoai-install` | Install RHOAI 3.4 |
+| `make servicemesh-install` | Install Service Mesh 3 operator (optional — not required on OCP 4.21+) |
+| `make rhoai-install` | Install RHOAI and prerequisites |
+| `make perf-test` | Run staged performance tests |
 
 ## Notes
 
