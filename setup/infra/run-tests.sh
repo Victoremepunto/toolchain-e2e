@@ -2,15 +2,33 @@
 set -euo pipefail
 
 # Staged perf tests: additive users, no cleanup between stages.
-# SM3 and RHOAI must be installed before running this script.
+# RHOAI must be installed before running this script (SM3 is not required on OCP 4.21+).
 
-export KUBECONFIG=setup/infra/clusters/vmugicag-perf/auth/kubeconfig
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${SCRIPT_DIR}/config"
 
-KUBEADMIN_PASSWORD="$(cat setup/infra/clusters/vmugicag-perf/auth/kubeadmin-password)"
+if [[ ! -f "${CONFIG_FILE}" ]]; then
+  echo "ERROR: ${CONFIG_FILE} not found."
+  echo "Copy config.example and customize:"
+  echo "  cp ${SCRIPT_DIR}/config.example ${CONFIG_FILE}"
+  exit 1
+fi
+
+# shellcheck source=config.example
+source "${CONFIG_FILE}"
+
+export KUBECONFIG="${SCRIPT_DIR}/clusters/${CLUSTER_NAME}/auth/kubeconfig"
+
+if [[ ! -f "${KUBECONFIG}" ]]; then
+  echo "ERROR: Kubeconfig not found at ${KUBECONFIG}"
+  echo "Run 'make cluster-create' first."
+  exit 1
+fi
+
+KUBEADMIN_PASSWORD="$(cat "${SCRIPT_DIR}/clusters/${CLUSTER_NAME}/auth/kubeadmin-password")"
 oc login -u kubeadmin -p "${KUBEADMIN_PASSWORD}" --insecure-skip-tls-verify=true
 
-WORKLOADS="openshift-operators:servicemesh-operator3"
-WORKLOADS+=",cert-manager-operator:cert-manager-operator-controller-manager"
+WORKLOADS="cert-manager-operator:cert-manager-operator-controller-manager"
 WORKLOADS+=",cert-manager:cert-manager"
 WORKLOADS+=",cert-manager:cert-manager-cainjector"
 WORKLOADS+=",cert-manager:cert-manager-webhook"

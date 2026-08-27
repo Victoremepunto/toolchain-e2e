@@ -26,7 +26,7 @@ cluster-reset:
 	$(INFRA_DIR)/reset-cluster.sh
 
 .PHONY: servicemesh-install
-## Install Service Mesh 3 operator on the perf-test cluster
+## Install Service Mesh 3 operator on the perf-test cluster (optional — not required on OCP 4.21+)
 servicemesh-install:
 	$(INFRA_DIR)/install-servicemesh.sh
 
@@ -34,3 +34,8 @@ servicemesh-install:
 ## Install RHOAI 3.4 on the perf-test cluster
 rhoai-install:
 	$(INFRA_DIR)/install-rhoai.sh
+
+.PHONY: perf-test
+## Run the staged performance tests on the perf-test cluster
+perf-test:
+	$(INFRA_DIR)/run-tests.sh

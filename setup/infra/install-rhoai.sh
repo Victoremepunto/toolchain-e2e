@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Installs RHOAI 3.4 and its prerequisites on the perf-test cluster.
-# Prerequisites: Service Mesh 3 must be installed first (make servicemesh-install).
+# Service Mesh 3 is NOT required on OCP 4.21+.
 #
 set -euo pipefail
 
@@ -52,14 +52,6 @@ wait_for_csv() {
     sleep 10
   done
 }
-
-# --- Prerequisite check: Service Mesh 3 ---
-if ! oc get csv -n openshift-operators 2>/dev/null | grep -q "servicemeshoperator3.*Succeeded"; then
-  echo "ERROR: Service Mesh 3 operator not found."
-  echo "Run 'make servicemesh-install' first."
-  exit 1
-fi
-echo "✓ Service Mesh 3 is installed."
 
 # --- Step 1: GPU MachineSet (g4dn.xlarge worker for LlamaStack/RAG) ---
 if oc get machineset -n openshift-machine-api 2>/dev/null | grep -q "gpu"; then
@@ -257,9 +249,13 @@ fi
 
 # --- Step 7: DSCI (DSCInitialization) ---
 # The RHOAI operator auto-creates a default DSCI; applying a second one is
-# rejected by the admission webhook.  Skip if one already exists and is Ready.
+# rejected by the admission webhook.  If one exists, patch it to match our
+# desired config (e.g. trustedCABundle: Removed).
 if oc get dsci default-dsci -o jsonpath='{.status.phase}' 2>/dev/null | grep -q "Ready"; then
-  echo "✓ DSCInitialization already exists and is Ready — skipping."
+  echo "DSCInitialization already exists — patching to match desired config..."
+  oc patch dsci default-dsci --type=merge \
+    -p '{"spec":{"trustedCABundle":{"managementState":"Removed","customCABundle":""}}}'
+  echo "✓ DSCI patched."
 else
   echo "Applying DSCInitialization..."
   oc apply -f "${MANIFESTS}/dsci.yaml"
@@ -295,7 +291,7 @@ echo ""
 echo "=== RHOAI 3.4 Installation Complete ==="
 echo ""
 echo "Installed operators:"
-oc get csv -A -o custom-columns='NAME:.metadata.name,PHASE:.status.phase' --no-headers | grep -E 'rhods|servicemesh|jobset|cert-manager|nfd|gpu-operator' | sort -u
+oc get csv -A -o custom-columns='NAME:.metadata.name,PHASE:.status.phase' --no-headers | grep -E 'rhods|jobset|cert-manager|nfd|gpu-operator' | sort -u
 echo ""
 echo "Pods in redhat-ods-applications:"
 oc get pods -n redhat-ods-applications
